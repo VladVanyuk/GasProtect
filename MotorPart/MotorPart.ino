@@ -151,29 +151,28 @@ void loop() {
         Serial.print('\n');
 
         delay(100);
-        if (sensorValue > 200) {
-          digitalWrite(led_pin, LOW);
+         if (sensorValue > 10) {
           Serial.println("TRUE");
-          digitalWrite(led_pin, HIGH);
-          delay(100);
-          digitalWrite(led_pin, LOW);
-          delay(100);
 
-          if (digitalRead(buttonStart) == HIGH) {
-            Serial.println("Start");
-            digitalWrite(motor_pin1, HIGH);
-          }
-          if (digitalRead(buttonStart) == LOW && digitalRead(buttonEnd) == LOW) {
-            Serial.println("Spining");
-          }
-          if (digitalRead(buttonEnd) == HIGH) {
-            Serial.println("Spining stoped");
-            digitalWrite(motor_pin1, LOW);
+          while (true) {
+
+            if (digitalRead(buttonStart) == HIGH) {
+              Serial.println("First");
+              digitalWrite(motor_pin1, HIGH);
+              
+            } else if (digitalRead(buttonEnd) == HIGH) {
+              Serial.println("Third");
+              digitalWrite(motor_pin1, LOW);
+              break;
+            }
           }
         } else {
 
           Serial.println("FALSE");
         }
+
+    // Send an ACK if requested.
+    // (You don't need this code if you're not using ACKs.)
       } else {
         delay(50);
       }
@@ -202,8 +201,7 @@ void Blink(byte PIN, int DELAY_MS)
 
 void sleepForSeconds(unsigned int seconds) {
   unsigned int sleepCycles = seconds / 8;
-
   for (unsigned int i = 0; i < sleepCycles; i++) {
     LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
-  }
+ }
 }

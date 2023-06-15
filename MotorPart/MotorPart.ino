@@ -1,3 +1,5 @@
+#include <LowPower.h>
+
 #include <RFM69.h>
 #include <SPI.h>
 
@@ -9,17 +11,14 @@
 
 // RFM69 frequency, uncomment the frequency of your module:
 
-//#define FREQUENCY   RF69_433MHZ
-// #define FREQUENCY     RF69_915MHZ
 #define FREQUENCY RF69_868MHZ
-// AES encryption (or not):
 
 #define ENCRYPT true                   // Set to "true" to use encryption
 #define ENCRYPTKEY "TOPSECRETPASSWRD"  // Use the same 16-byte key on all nodes
 
 // Use ACKnowledge when sending messages (or not):
 
-#define USEACK false  // Request ACKs or not
+#define USEACK true  // Request ACKs or not
 
 // Packet sent/received indicator LED (optional):
 
@@ -30,12 +29,15 @@
 
 RFM69 radio;
 
-int buttonStart = 8;
-int buttonEnd = 7;
+int buttonStart = 7;
+int buttonEnd = 8;
+int led_pin = 13;
 int motor_pin1 = 6;
-
+byte speed = 50;
 float sensorValue;
 float sensorVolts;
+
+int counter = 0;
 
 void setup() {
   // Open a serial port so we can send keystrokes to the module:
@@ -45,107 +47,111 @@ void setup() {
   Serial.print(MYNODEID, DEC);
   Serial.println(" ready");
 
-  // Initialize the RFM69HCW:
-  // radio.setCS(10);  //uncomment this if using Pro Micro
+  pinMode(buttonStart, INPUT_PULLUP);
+  pinMode(buttonEnd, INPUT_PULLUP);
+  pinMode(motor_pin1, OUTPUT);
+  pinMode(led_pin, OUTPUT);
   radio.initialize(FREQUENCY, MYNODEID, NETWORKID);
   radio.setHighPower();  // Always use this for RFM69HCW
 
   // Turn on encryption if desired:
 
-  if (ENCRYPT)
+  if (ENCRYPT) {
     radio.encrypt(ENCRYPTKEY);
+  }
 }
 
 void loop() {
-  // Set up a "buffer" for characters that we'll send:
-
-  static char sendbuffer[62];
-  static int sendlength = 0;
-
-  // SENDING
-
-  // In this section, we'll gather serial characters and
-  // send them to the other node if we (1) get a carriage return,
-  // or (2) the buffer is full (61 characters).
-
-  // If there is any serial input, add it to the buffer:
-
-  if (Serial.available() > 0) {
-    char input = Serial.read();
-
-    if (input != '\r')  // not a carriage return
-    {
-      sendbuffer[sendlength] = input;
-      sendlength++;
+  if (radio.receiveDone()) {
+    if (radio.ACKRequested()) {
+      radio.sendACK();
+      Serial.println("ACK sent");
     }
+    unsigned long startTime = millis();
 
-    // If the input is a carriage return, or the buffer is full:
+    while (millis() - startTime < 30000) {
+      // Set up a "buffer" for characters that we'll send:
+      static char sendbuffer[62];
+      static int sendlength = 0;
 
-    if ((input == '\r') || (sendlength == 61))  // CR or buffer full
-    {
-      // Send the packet!
+      // SENDING
+
+      // In this section, we'll gather serial characters and
+      // send them to the other node if we (1) get a carriage return,
+      // or (2) the buffer is full (61 characters).
+
+      // If there is any serial input, add it to the buffer:
+
+      if (Serial.available() > 0) {
+        char input = Serial.read();
+
+        if (input != '\r')  // not a carriage return
+        {
+          sendbuffer[sendlength] = input;
+          sendlength++;
+        }
+
+        // If the input is a carriage return, or the buffer is full:
+
+        if ((input == '\r') || (sendlength == 61))  // CR or buffer full
+        {
+          // Send the packet!
 
 
-      Serial.print("sending to node ");
-      Serial.print(TONODEID, DEC);
-      Serial.print(", message [");
-      for (byte i = 0; i < sendlength; i++)
-        Serial.print(sendbuffer[i]);
-      Serial.println("]");
+          Serial.print("sending to node ");
+          Serial.print(TONODEID, DEC);
+          Serial.print(", message [");
+          for (byte i = 0; i < sendlength; i++)
+            Serial.print(sendbuffer[i]);
+          Serial.println("]");
 
-      // There are two ways to send packets. If you want
-      // acknowledgements, use sendWithRetry():
+          if (USEACK) {
+            if (radio.sendWithRetry(TONODEID, sendbuffer, sendlength))
+              Serial.println("ACK received!");
+            else
+              Serial.println("no ACK received");
+          } else  // don't use ACK
+          {
+            radio.send(TONODEID, sendbuffer, sendlength);
+          }
 
-      if (USEACK) {
-        if (radio.sendWithRetry(TONODEID, sendbuffer, sendlength))
-          Serial.println("ACK received!");
-        else
-          Serial.println("no ACK received");
+          sendlength = 0;  // reset the packet
+          Blink(LED, 10);
+        }
       }
 
-      // If you don't need acknowledgements, just use send():
+      // RECEIVING
 
-      else  // don't use ACK
+      // In this section, we'll check with the RFM69HCW to see
+      // if it has received any packets:
+      if (radio.receiveDone())  // Got one!
       {
-        radio.send(TONODEID, sendbuffer, sendlength);
-      }
+        // Print out the information:
 
-      sendlength = 0;  // reset the packet
-    }
-  }
+        Serial.print("received from node ");
+        Serial.print(radio.SENDERID, DEC);
+        Serial.print(", message [");
 
-  // RECEIVING
+        // The actual message is contained in the DATA array,
+        // and is DATALEN bytes in size:
 
-  // In this section, we'll check with the RFM69HCW to see
-  // if it has received any packets:
+        for (byte i = 0; i < radio.DATALEN; i++)
+          Serial.print((char)radio.DATA[i]);
 
-  if (radio.receiveDone())  // Got one!
-  {
-    // Print out the information:
+        // RSSI is the "Receive Signal Strength Indicator",
+        // smaller numbers mean higher power.
 
-    Serial.print("received from node ");
-    Serial.print(radio.SENDERID, DEC);
-    Serial.print(", message [");
+        Serial.print("], RSSI ");
+        Serial.println(radio.RSSI);
 
-    // The actual message is contained in the DATA array,
-    // and is DATALEN bytes in size:
+        /* Try to read incoming string into double variable */
+        double sensorValue = strtod(radio.DATA, NULL);
+        Serial.println("Sensor value = ");
+        Serial.print(sensorValue);
+        Serial.print('\n');
 
-    for (byte i = 0; i < radio.DATALEN; i++)
-      Serial.print((char)radio.DATA[i]);
-
-    // RSSI is the "Receive Signal Strength Indicator",
-    // smaller numbers mean higher power.
-
-    Serial.print("], RSSI ");
-    Serial.println(radio.RSSI);
-
-    /* Try to read incoming string into double variable */
-    double sensorValue = strtod(radio.DATA, NULL);
-    Serial.println("Sensor value = ");
-    Serial.print(sensorValue);
-    Serial.print('\n');
-
-     if (sensorValue > 10) {
+        delay(100);
+         if (sensorValue > 10) {
           Serial.println("TRUE");
 
           while (true) {
@@ -167,10 +173,35 @@ void loop() {
 
     // Send an ACK if requested.
     // (You don't need this code if you're not using ACKs.)
+      } else {
+        delay(50);
+      }
 
-    if (radio.ACKRequested()) {
-      radio.sendACK();
-      Serial.println("ACK sent");
+      // Send an ACK if requested.
+
+      if (radio.ACKRequested()) {
+        radio.sendACK();
+        Serial.println("ACK sent");
+      }
+      // Blink(LED, 10);
     }
+    Serial.println("sleep");
+    sleepForSeconds(24);
+    Serial.println("work");
   }
+}
+
+void Blink(byte PIN, int DELAY_MS)
+// Blink an LED for a given number of ms
+{
+  digitalWrite(PIN, HIGH);
+  delay(DELAY_MS);
+  digitalWrite(PIN, LOW);
+}
+
+void sleepForSeconds(unsigned int seconds) {
+  unsigned int sleepCycles = seconds / 8;
+  for (unsigned int i = 0; i < sleepCycles; i++) {
+    LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
+ }
 }

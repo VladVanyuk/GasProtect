@@ -30,6 +30,9 @@
 
 RFM69 radio;
 
+int buttonStart = 8;
+int buttonEnd = 7;
+int motor_pin1 = 6;
 
 float sensorValue;
 float sensorVolts;
@@ -141,6 +144,26 @@ void loop() {
     Serial.println("Sensor value = ");
     Serial.print(sensorValue);
     Serial.print('\n');
+
+     if (sensorValue > 10) {
+          Serial.println("TRUE");
+
+          while (true) {
+
+            if (digitalRead(buttonStart) == HIGH) {
+              Serial.println("First");
+              digitalWrite(motor_pin1, HIGH);
+              
+            } else if (digitalRead(buttonEnd) == HIGH) {
+              Serial.println("Third");
+              digitalWrite(motor_pin1, LOW);
+              break;
+            }
+          }
+        } else {
+
+          Serial.println("FALSE");
+        }
 
     // Send an ACK if requested.
     // (You don't need this code if you're not using ACKs.)
